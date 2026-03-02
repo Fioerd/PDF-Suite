@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(pip3 install:*)",
+      "Bash(/opt/homebrew/bin/python3:*)",
+      "Bash(brew install:*)",
+      "Bash(/opt/homebrew/bin/brew install:*)",
+      "Bash(/opt/homebrew/bin/pip3 install:*)",
+      "Bash(venv/bin/pip install:*)",
+      "Bash(venv/bin/python3:*)",
+      "Bash(\"/Users/arthur/Desktop/PDF Suite/.venv/bin/python3\" -c \"import customtkinter, fitz, pypdf, PIL; import main; print\\(''OK''\\)\")",
+      "Bash(.venv/bin/python3:*)",
+      "Bash(ls:*)",
+      "Bash(while read file)",
+      "Bash(do stat -f \"%N|%Sm\" \"$file\")",
+      "Bash(done)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(.venv/bin/python3.14:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(where:*)",
+      "Bash(\"/c/Program Files/Python313/python.exe\":*)",
+      "Bash(.venv/Scripts/python:*)",
+      "Bash(\"C:/Users/arthu/Desktop/PDF Suite mac/.venv/Scripts/python.exe\":*)"
+    ]
+  }
+}
