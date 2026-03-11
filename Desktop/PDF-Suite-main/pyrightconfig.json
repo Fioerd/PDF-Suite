@@ -1,0 +1,15 @@
+{
+    "pythonVersion": "3.13",
+    "pythonPlatform": "Windows",
+    "venvPath": ".",
+    "venv": ".venv",
+    "include": ["."],
+    "exclude": ["__pycache__"],
+    "typeCheckingMode": "basic",
+    "reportMissingImports": "none",
+    "reportMissingModuleSource": "none",
+    "reportUnknownVariableType": "none",
+    "reportUnknownMemberType": "none",
+    "reportUnknownParameterType": "none",
+    "reportUnknownArgumentType": "none"
+}
