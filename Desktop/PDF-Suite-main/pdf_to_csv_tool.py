@@ -270,7 +270,9 @@ class PDFtoCSVTool(QWidget):
         lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lay.addWidget(lbl)
         # top already has QHBoxLayout set on it; use it directly
-        top.layout().addWidget(w)
+        top_lay = top.layout()
+        if top_lay is not None:
+            top_lay.addWidget(w)
 
     # ======================================================================
     # BUILD LEFT PANEL

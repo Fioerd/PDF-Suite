@@ -1711,7 +1711,8 @@ class ViewTool(QWidget):
         if not path.lower().endswith(".pdf"):
             path += ".pdf"
         try:
-            self._excerpt_out.save(path)
+            if self._excerpt_out is not None:
+                self._excerpt_out.save(path)
             QMessageBox.information(self, "Saved", f"Excerpt PDF saved to:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save:\n{e}")
@@ -1844,8 +1845,9 @@ class ViewTool(QWidget):
         # Clear grid
         while self._recent_grid.count():
             item = self._recent_grid.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget() if item else None
+            if widget:
+                widget.deleteLater()
         n = len(self._recent_colors)
         self._recent_section.setVisible(n > 0)
         cols = 7
@@ -2453,7 +2455,9 @@ class ViewTool(QWidget):
         page = self.doc[self.current_page]
         chars = []
         char_idx = 0
-        for b_no, block in enumerate(page.get_text("rawdict", flags=0).get("blocks", [])):
+        raw = page.get_text("rawdict", flags=0)
+        blocks = raw.get("blocks", []) if isinstance(raw, dict) else []
+        for b_no, block in enumerate(blocks):
             if block.get("type") != 0:
                 continue
             for l_no, line in enumerate(block.get("lines", [])):
