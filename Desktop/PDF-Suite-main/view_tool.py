@@ -42,8 +42,9 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QPainter, QColor, QPen, QBrush, QPainterPath, QImage, QPixmap,
-    QKeySequence, QShortcut, QFont, QFontMetrics, QCursor,
+    QKeySequence, QShortcut, QFont, QFontMetrics, QCursor, QIcon,
 )
+from icons import svg_pixmap, svg_icon
 
 try:
     import fitz  # pymupdf
@@ -264,7 +265,7 @@ class _SigCanvas(QWidget):
         buf = QByteArray()
         tmp_buf = QBuffer(buf)
         tmp_buf.open(QBuffer.OpenModeFlag.WriteOnly)
-        img.save(tmp_buf, b"PNG")
+        img.save(tmp_buf, "PNG")
         tmp_buf.close()
         return bytes(buf.data())
 
@@ -767,7 +768,9 @@ class ViewTool(QWidget):
         left_lay.setSpacing(8)
 
         if self._back_callback:
-            back_btn = QPushButton("← Back to Home")
+            back_btn = QPushButton("  Back to Home")
+            back_btn.setIcon(svg_icon("arrow-left", G500, 14))
+            back_btn.setIconSize(QSize(14, 14))
             back_btn.setFixedHeight(32)
             back_btn.setStyleSheet(
                 f"QPushButton {{ background: transparent; color: {G500}; border: none; "
@@ -1096,7 +1099,9 @@ class ViewTool(QWidget):
         self._btn_last.hide()
         self._btn_last.clicked.connect(self._last_page)
 
-        self._btn_prev = QPushButton("← Prev")
+        self._btn_prev = QPushButton("Prev")
+        self._btn_prev.setIcon(svg_icon("chevron-left", G700, 14))
+        self._btn_prev.setIconSize(QSize(14, 14))
         self._btn_prev.setFixedHeight(32)
         self._btn_prev.setStyleSheet(
             f"QPushButton {{ background: {WHITE}; color: {G700}; "
@@ -1148,7 +1153,10 @@ class ViewTool(QWidget):
         pill_lay2.addWidget(self._total_lbl)
         nav_lay.addWidget(page_pill)
 
-        self._btn_next = QPushButton("Next →")
+        self._btn_next = QPushButton("Next")
+        self._btn_next.setIcon(svg_icon("chevron-right", G700, 14))
+        self._btn_next.setIconSize(QSize(14, 14))
+        self._btn_next.setLayoutDirection(Qt.LayoutDirection.RightToLeft)
         self._btn_next.setFixedHeight(32)
         self._btn_next.setStyleSheet(
             f"QPushButton {{ background: {WHITE}; color: {G700}; "
@@ -1644,13 +1652,15 @@ class ViewTool(QWidget):
             card_lay.addLayout(info_col, 1)
 
             # Delete button
-            del_btn = QPushButton("✕")
+            del_btn = QPushButton()
+            del_btn.setIcon(QIcon(svg_pixmap("x", G400, 12)))
+            del_btn.setIconSize(QSize(12, 12))
             del_btn.setFixedSize(22, 22)
             del_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             del_btn.setStyleSheet(
-                f"QPushButton {{ background: transparent; color: {G400}; "
-                f"border: none; font: 11px 'Segoe UI'; border-radius: 4px; }}"
-                f"QPushButton:hover {{ background: #FEE2E2; color: #EF4444; }}"
+                f"QPushButton {{ background: transparent; "
+                f"border: none; border-radius: 4px; }}"
+                f"QPushButton:hover {{ background: #FEE2E2; }}"
             )
             del_btn.clicked.connect(lambda checked=False, idx=i: self._delete_excerpt(idx))
             card_lay.addWidget(del_btn, 0, Qt.AlignmentFlag.AlignTop)
@@ -1711,8 +1721,7 @@ class ViewTool(QWidget):
         if not path.lower().endswith(".pdf"):
             path += ".pdf"
         try:
-            if self._excerpt_out is not None:
-                self._excerpt_out.save(path)
+            self._excerpt_out.save(path)
             QMessageBox.information(self, "Saved", f"Excerpt PDF saved to:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not save:\n{e}")
@@ -1845,9 +1854,8 @@ class ViewTool(QWidget):
         # Clear grid
         while self._recent_grid.count():
             item = self._recent_grid.takeAt(0)
-            widget = item.widget() if item else None
-            if widget:
-                widget.deleteLater()
+            if item.widget():
+                item.widget().deleteLater()
         n = len(self._recent_colors)
         self._recent_section.setVisible(n > 0)
         cols = 7
@@ -1929,7 +1937,6 @@ class ViewTool(QWidget):
             self._redo_stack.append((cur_buf, self.current_page))
             buf, page_idx = self._undo_stack.pop()
             self.doc.close()
-            assert fitz is not None
             self.doc = fitz.open(stream=buf, filetype="pdf")
             self.total_pages = len(self.doc)
             self._modified = bool(self._undo_stack)
@@ -1945,7 +1952,6 @@ class ViewTool(QWidget):
             self._undo_stack.append((cur_buf, self.current_page))
             buf, page_idx = self._redo_stack.pop()
             self.doc.close()
-            assert fitz is not None
             self.doc = fitz.open(stream=buf, filetype="pdf")
             self.total_pages = len(self.doc)
             self._modified = True
@@ -1969,7 +1975,6 @@ class ViewTool(QWidget):
         try:
             if self.doc:
                 self.doc.close()
-            assert fitz is not None
             self.doc = fitz.open(self.pdf_path)
             self.total_pages = len(self.doc)
             self.current_page = 0
@@ -2004,7 +2009,6 @@ class ViewTool(QWidget):
             return
         try:
             self._push_undo()
-            assert fitz is not None
             src = fitz.open(p)
             self.doc.insert_pdf(src)
             src.close()
@@ -2029,9 +2033,8 @@ class ViewTool(QWidget):
         # Clear existing thumbnails
         while self._thumb_layout.count() > 1:
             item = self._thumb_layout.takeAt(0)
-            widget = item.widget() if item else None
-            if widget:
-                widget.deleteLater()
+            if item.widget():
+                item.widget().deleteLater()
         self._thumb_imgs.clear()
         self._highlighted_thumb_frame = None
         if not self.doc:
@@ -2072,7 +2075,6 @@ class ViewTool(QWidget):
     def _render_thumb_batch(self, batch=6):
         if not self.doc:
             return
-        assert fitz is not None
         start = self._thumb_render_next
         end   = min(start + batch, self.total_pages)
 
@@ -2123,9 +2125,8 @@ class ViewTool(QWidget):
     def _build_toc(self):
         while self._toc_layout.count() > 1:
             item = self._toc_layout.takeAt(0)
-            widget = item.widget() if item else None
-            if widget:
-                widget.deleteLater()
+            if item.widget():
+                item.widget().deleteLater()
 
         if not self.doc:
             return
@@ -2159,13 +2160,11 @@ class ViewTool(QWidget):
 
     def _canvas_to_pdf(self, cx: float, cy: float):
         """Convert canvas widget coordinates to PDF page coordinates."""
-        assert fitz is not None
         pt = fitz.Point(cx - self._page_ox, cy - self._page_oy) * self._inv_mat
         return pt.x, pt.y
 
     def _pdf_to_canvas(self, px: float, py: float):
         """Convert PDF page coordinates to canvas widget coordinates."""
-        assert fitz is not None
         pt = fitz.Point(px, py) * self._render_mat
         return pt.x + self._page_ox, pt.y + self._page_oy
 
@@ -2198,7 +2197,7 @@ class ViewTool(QWidget):
     def _render_page(self):
         if not self.doc:
             return
-        assert fitz is not None
+
         vp = self._scroll_area.viewport()
         cw = max(vp.width(), 300)
         ch = max(vp.height(), 300)
@@ -2448,45 +2447,30 @@ class ViewTool(QWidget):
     # TEXT SELECTION & COPY
     # ==================================================================
 
-    def _get_chars(self):
-        """Return char tuples (x0,y0,x1,y1, char, block_no, line_no, char_idx)."""
+    def _get_words(self):
         if not self.doc:
             return []
         page = self.doc[self.current_page]
-        chars = []
-        char_idx = 0
-        raw = page.get_text("rawdict", flags=0)
-        blocks = raw.get("blocks", []) if isinstance(raw, dict) else []
-        for b_no, block in enumerate(blocks):
-            if block.get("type") != 0:
-                continue
-            for l_no, line in enumerate(block.get("lines", [])):
-                for span in line.get("spans", []):
-                    for ch in span.get("chars", []):
-                        bb = ch["bbox"]
-                        chars.append((bb[0], bb[1], bb[2], bb[3],
-                                      ch["c"], b_no, l_no, char_idx))
-                        char_idx += 1
-        return chars
+        return page.get_text("words")
 
-    def _select_chars_flow(self, sx, sy, ex, ey):
-        """Select characters in reading-flow order between two PDF points."""
-        chars = self._get_chars()
-        if not chars:
+    def _select_words_flow(self, sx, sy, ex, ey):
+        """Select words in reading-flow order between two PDF points."""
+        words = self._get_words()
+        if not words:
             return []
-        chars.sort(key=lambda c: (c[5], c[6], c[7]))
-        si = self._nearest_item_index(chars, sx, sy)
-        ei = self._nearest_item_index(chars, ex, ey)
+        words.sort(key=lambda w: (w[5], w[6], w[7]))
+        si = self._nearest_word_index(words, sx, sy)
+        ei = self._nearest_word_index(words, ex, ey)
         if si is None or ei is None:
             return []
         lo, hi = min(si, ei), max(si, ei)
-        return chars[lo:hi + 1]
+        return words[lo:hi + 1]
 
     @staticmethod
-    def _nearest_item_index(items, px, py):
+    def _nearest_word_index(words, px, py):
         best_idx = None
         best_dist = float('inf')
-        for i, w in enumerate(items):
+        for i, w in enumerate(words):
             cx = (w[0] + w[2]) * 0.5
             cy = (w[1] + w[3]) * 0.5
             d = (px - cx) ** 2 + (py - cy) ** 2
@@ -2494,28 +2478,6 @@ class ViewTool(QWidget):
                 best_dist = d
                 best_idx = i
         return best_idx
-
-    @staticmethod
-    def _chars_to_text(chars):
-        """Join chars into a string, inserting spaces at word/line boundaries."""
-        if not chars:
-            return ""
-        result = []
-        prev = None
-        for ch in chars:
-            if prev is not None:
-                # Different line → space
-                if ch[5] != prev[5] or ch[6] != prev[6]:
-                    result.append(" ")
-                else:
-                    # Same line — insert space when there's a visible gap
-                    gap = ch[0] - prev[2]
-                    avg_w = max(0.001, ((ch[2] - ch[0]) + (prev[2] - prev[0])) / 2)
-                    if gap > avg_w * 0.3:
-                        result.append(" ")
-            result.append(ch[4])
-            prev = ch
-        return "".join(result)
 
     def _copy_selection(self):
         if self._selection_text:
@@ -2578,9 +2540,9 @@ class ViewTool(QWidget):
         elif self._tool in (Tool.SELECT, Tool.HIGHLIGHT,
                              Tool.UNDERLINE, Tool.STRIKETHROUGH):
             start_px, start_py = self._canvas_to_pdf(sx, sy)
-            selected = self._select_chars_flow(start_px, start_py, px, py)
-            self._selected_words = selected
-            self._selection_text = self._chars_to_text(selected)
+            self._selected_words = self._select_words_flow(
+                start_px, start_py, px, py)
+            self._selection_text = " ".join(w[4] for w in self._selected_words)
             self._canvas.update()
 
         elif self._tool == Tool.FREEHAND:
@@ -2591,40 +2553,27 @@ class ViewTool(QWidget):
             self._canvas.update()
 
     def _on_mouse_up(self, cx: float, cy: float):
-        if not self.doc:
-            return
-        assert fitz is not None
-
-        # EXCERTER: handled entirely via _rb_* state
+        # EXCERTER uses its own rubber-band state — handle before the _drag_start guard
         if self._tool == Tool.EXCERTER:
-            if self._rb_start is None:
-                return
-            sx, sy = self._rb_start
-            self._rb_start = None
-            self._rb_current = None
-            self._canvas.update()
-            if abs(cx - sx) < 8 or abs(cy - sy) < 8:
-                return
-            # Clamp to page bounds (mirrors excerpt_tool exactly)
-            x0 = max(min(sx, cx), self._page_ox)
-            y0 = max(min(sy, cy), self._page_oy)
-            x1 = min(max(sx, cx), self._page_ox + self._page_iw)
-            y1 = min(max(sy, cy), self._page_oy + self._page_ih)
-            if x1 <= x0 or y1 <= y0:
-                return
-            # Convert clamped canvas coords → PDF coords
-            p0 = fitz.Point(x0 - self._page_ox, y0 - self._page_oy) * self._inv_mat
-            p1 = fitz.Point(x1 - self._page_ox, y1 - self._page_oy) * self._inv_mat
-            crop = fitz.Rect(p0, p1)
-            crop.normalize()
-            if crop.is_empty or crop.width < 2 or crop.height < 2:
-                return
-            flash = (int(x0), int(y0), int(x1 - x0), int(y1 - y0))
-            self._do_excerpt(crop, flash)
+            if self._rb_start is not None and self.doc and fitz:
+                sx, sy = self._rb_start
+                x0c, y0c = min(sx, cx), min(sy, cy)
+                x1c, y1c = max(sx, cx), max(sy, cy)
+                self._rb_start = None
+                self._rb_current = None
+                self._canvas.update()
+                if x1c - x0c > 4 and y1c - y0c > 4:
+                    px0, py0 = self._canvas_to_pdf(x0c, y0c)
+                    px1, py1 = self._canvas_to_pdf(x1c, y1c)
+                    crop_rect = fitz.Rect(px0, py0, px1, py1)
+                    crop_rect.normalize()
+                    flash = (x0c, y0c, x1c - x0c, y1c - y0c)
+                    self._do_excerpt(crop_rect, flash_rect=flash)
             return
 
-        if self._drag_start is None:
+        if not self.doc or self._drag_start is None:
             return
+
         mods = QApplication.keyboardModifiers()
         self._shift_held = bool(mods & Qt.KeyboardModifier.ShiftModifier)
 
@@ -2743,8 +2692,8 @@ class ViewTool(QWidget):
                 annot.set_border(width=self._stroke_width)
                 if self._tool == Tool.ARROW:
                     annot.set_line_ends(
-                        getattr(fitz, "PDF_ANNOT_LE_NONE", 0),
-                        getattr(fitz, "PDF_ANNOT_LE_CLOSED_ARROW", 0))
+                        fitz.PDF_ANNOT_LE_NONE,
+                        fitz.PDF_ANNOT_LE_CLOSED_ARROW)
                 annot.update()
                 self._modified = True
                 self._show_page(self.current_page)
@@ -2756,36 +2705,28 @@ class ViewTool(QWidget):
     def _on_double_click(self, cx: float, cy: float):
         if not self.doc:
             return
-        assert fitz is not None
         px, py = self._canvas_to_pdf(cx, cy)
         click_pt = fitz.Point(px, py)
         page = self.doc[self.current_page]
-        if page is None:
-            return
+
         for annot in page.annots():
             if annot.rect.contains(click_pt):
                 atype = annot.type[0]
-                if atype == getattr(fitz, "PDF_ANNOT_FREE_TEXT", 0):
+                if atype == fitz.PDF_ANNOT_FREE_TEXT:
                     self._open_textbox_dialog(px, py, existing_annot=annot)
                     return
-                elif atype == getattr(fitz, "PDF_ANNOT_TEXT", 0):
+                elif atype == fitz.PDF_ANNOT_TEXT:
                     self._edit_sticky(annot)
                     return
 
     def _edit_sticky(self, annot):
-        info = annot.info
-        old_text = (info.get("content", "") if info is not None else "") or ""
+        old_text = annot.info.get("content", "")
         text, ok = QInputDialog.getText(
             self, "Edit Sticky Note", "Edit note text:", text=old_text)
         if not ok:
             return
         self._push_undo()
-        doc = self.doc
-        if doc is None:
-            return
-        page = doc[self.current_page]
-        if page is None:
-            return
+        page = self.doc[self.current_page]
         if text:
             annot.set_info(content=text)
             annot.update()
@@ -2801,8 +2742,7 @@ class ViewTool(QWidget):
     def _open_textbox_dialog(self, pdf_x, pdf_y, existing_annot=None):
         old_text = ""
         if existing_annot:
-            info = existing_annot.info
-            old_text = (info.get("content", "") if info is not None else "") or ""
+            old_text = existing_annot.info.get("content", "")
         title  = "Edit Text Box" if existing_annot else "Add Text Box"
         prompt = "Edit text box:" if existing_annot else "Enter text for the text box:"
         text, ok = QInputDialog.getText(self, title, prompt, text=old_text)
@@ -2812,13 +2752,7 @@ class ViewTool(QWidget):
             return
 
         self._push_undo()
-        assert fitz is not None
-        doc = self.doc
-        if doc is None:
-            return
-        page = doc[self.current_page]
-        if page is None:
-            return
+        page = self.doc[self.current_page]
         _, hex_c, fitz_rgb = self._annot_color
         fontsize = max(8, self._stroke_width * 3)
 
@@ -2852,13 +2786,7 @@ class ViewTool(QWidget):
         text, ok = QInputDialog.getText(self, "Add Sticky Note", "Enter note text:")
         if ok and text:
             self._push_undo()
-            assert fitz is not None
-            doc = self.doc
-            if doc is None:
-                return
-            page = doc[self.current_page]
-            if page is None:
-                return
+            page = self.doc[self.current_page]
             point = fitz.Point(pdf_x, pdf_y)
             annot = page.add_text_annot(point, text, icon="Comment")
             _, _, fitz_rgb = self._annot_color
@@ -2881,20 +2809,14 @@ class ViewTool(QWidget):
             return
 
         self._push_undo()
-        assert fitz is not None
         # Determine size from the QImage we wrote
-        img = QImage.fromData(png_bytes, b"PNG")
+        img = QImage.fromData(png_bytes, "PNG")
         sig_w = img.width() * 0.5
         sig_h = img.height() * 0.5
         if sig_w < 1 or sig_h < 1:
             sig_w, sig_h = 100, 50
 
-        doc = self.doc
-        if doc is None:
-            return
-        page = doc[self.current_page]
-        if page is None:
-            return
+        page = self.doc[self.current_page]
         rect = fitz.Rect(pdf_x, pdf_y, pdf_x + sig_w, pdf_y + sig_h)
         page.insert_image(rect, stream=png_bytes)
         self._modified = True
@@ -2915,13 +2837,7 @@ class ViewTool(QWidget):
     def _draw_form_widgets(self):
         if not self.doc:
             return
-        assert fitz is not None
-        doc = self.doc
-        if doc is None:
-            return
-        page = doc[self.current_page]
-        if page is None:
-            return
+        page = self.doc[self.current_page]
         widget_iter = page.widgets()
         if widget_iter is None:
             return
@@ -2932,7 +2848,7 @@ class ViewTool(QWidget):
             w = max(int(x1 - x0), 20)
             h = max(int(y1 - y0), 18)
 
-            if widget.field_type == getattr(fitz, "PDF_WIDGET_TYPE_TEXT", 0):
+            if widget.field_type == fitz.PDF_WIDGET_TYPE_TEXT:
                 entry = QLineEdit(self._canvas)
                 entry.setGeometry(int(x0), int(y0), w, h)
                 entry.setStyleSheet(
@@ -2940,23 +2856,23 @@ class ViewTool(QWidget):
                     f"color: {G900}; font: {max(9, h - 8)}px 'Segoe UI'; }}")
                 if widget.field_value:
                     entry.setText(str(widget.field_value))
-                setattr(entry, "_pdf_widget", widget)
+                entry._pdf_widget = widget
                 entry.editingFinished.connect(
                     lambda ent=entry: self._update_form_field(ent))
                 entry.show()
                 self._form_widgets.append(entry)
 
-            elif widget.field_type == getattr(fitz, "PDF_WIDGET_TYPE_CHECKBOX", 0):
+            elif widget.field_type == fitz.PDF_WIDGET_TYPE_CHECKBOX:
                 cb = QCheckBox(self._canvas)
                 cb.setGeometry(int(x0), int(y0), h, h)
                 cb.setChecked(bool(widget.field_value))
-                setattr(cb, "_pdf_widget", widget)
+                cb._pdf_widget = widget
                 cb.stateChanged.connect(
                     lambda state, cbox=cb: self._update_checkbox(cbox))
                 cb.show()
                 self._form_widgets.append(cb)
 
-            elif widget.field_type == getattr(fitz, "PDF_WIDGET_TYPE_COMBOBOX", 0):
+            elif widget.field_type == fitz.PDF_WIDGET_TYPE_COMBOBOX:
                 choices = widget.choice_values or []
                 if choices:
                     combo = QComboBox(self._canvas)
@@ -2967,7 +2883,7 @@ class ViewTool(QWidget):
                         f"color: {G900}; }}")
                     if widget.field_value and widget.field_value in choices:
                         combo.setCurrentText(widget.field_value)
-                    setattr(combo, "_pdf_widget", widget)
+                    combo._pdf_widget = widget
                     combo.currentTextChanged.connect(
                         lambda val, c=combo: self._update_combo(c, val))
                     combo.show()
@@ -2975,26 +2891,23 @@ class ViewTool(QWidget):
 
     def _update_form_field(self, entry):
         self._push_undo()
-        widget = getattr(entry, "_pdf_widget", None)
-        if widget is not None:
-            widget.field_value = entry.text()
-            widget.update()
+        widget = entry._pdf_widget
+        widget.field_value = entry.text()
+        widget.update()
         self._modified = True
 
     def _update_checkbox(self, cb):
         self._push_undo()
-        widget = getattr(cb, "_pdf_widget", None)
-        if widget is not None:
-            widget.field_value = cb.isChecked()
-            widget.update()
+        widget = cb._pdf_widget
+        widget.field_value = cb.isChecked()
+        widget.update()
         self._modified = True
 
     def _update_combo(self, combo, val):
         self._push_undo()
-        widget = getattr(combo, "_pdf_widget", None)
-        if widget is not None:
-            widget.field_value = val
-            widget.update()
+        widget = combo._pdf_widget
+        widget.field_value = val
+        widget.update()
         self._modified = True
 
     # ==================================================================
@@ -3010,10 +2923,9 @@ class ViewTool(QWidget):
         if not path:
             return
         try:
-            assert fitz is not None
             if path == self.pdf_path:
                 self.doc.save(path, incremental=True,
-                              encryption=getattr(fitz, "PDF_ENCRYPT_KEEP", 0))
+                              encryption=fitz.PDF_ENCRYPT_KEEP)
             else:
                 self.doc.save(path)
             self._modified = False

@@ -22,8 +22,9 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QInputDialog, QProgressBar, QSizePolicy,
     QApplication,
 )
-from PySide6.QtCore import Qt, QTimer, QEvent, QObject
-from PySide6.QtGui import QPainter, QColor, QPixmap, QImage, QPen, QFont, QCursor
+from PySide6.QtCore import Qt, QTimer, QEvent, QObject, QSize
+from PySide6.QtGui import QPainter, QColor, QPixmap, QImage, QPen, QFont, QCursor, QIcon
+from icons import svg_pixmap, svg_icon
 
 # ---------------------------------------------------------------------------
 # Optional dependency check
@@ -553,20 +554,22 @@ class PDFtoCSVTool(QWidget):
         nav_h.setContentsMargins(10, 7, 10, 7)
         nav_h.setSpacing(4)
 
-        prev_btn = QPushButton("←")
+        prev_btn = QPushButton()
+        prev_btn.setIcon(QIcon(svg_pixmap("chevron-left", G700, 14)))
+        prev_btn.setIconSize(QSize(14, 14))
         prev_btn.setFixedSize(34, 30)
         prev_btn.setStyleSheet(
-            f"QPushButton {{background: transparent; color: {G700}; "
-            f"border-radius: 4px; font: 14px;}} "
+            f"QPushButton {{background: transparent; border-radius: 4px;}} "
             f"QPushButton:hover {{background: {G200};}}")
         prev_btn.clicked.connect(self._prev_page)
         nav_h.addWidget(prev_btn)
 
-        next_btn = QPushButton("→")
+        next_btn = QPushButton()
+        next_btn.setIcon(QIcon(svg_pixmap("chevron-right", G700, 14)))
+        next_btn.setIconSize(QSize(14, 14))
         next_btn.setFixedSize(34, 30)
         next_btn.setStyleSheet(
-            f"QPushButton {{background: transparent; color: {G700}; "
-            f"border-radius: 4px; font: 14px;}} "
+            f"QPushButton {{background: transparent; border-radius: 4px;}} "
             f"QPushButton:hover {{background: {G200};}}")
         next_btn.clicked.connect(self._next_page)
         nav_h.addWidget(next_btn)

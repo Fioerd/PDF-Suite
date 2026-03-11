@@ -23,8 +23,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QEvent, QObject, QRect, QPoint, QSize
 from PySide6.QtGui import (
     QPainter, QColor, QPixmap, QImage, QPen, QPainterPath,
-    QFont, QCursor, QBrush,
+    QFont, QCursor, QBrush, QIcon,
 )
+from icons import svg_pixmap, svg_icon
 
 try:
     import fitz  # pymupdf
@@ -162,6 +163,7 @@ class ExcerptCanvas(QWidget):
         self.setMouseTracking(True)
         self.setCursor(QCursor(Qt.CursorShape.CrossCursor))
         self.setMinimumSize(300, 300)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     # ------------------------------------------------------------------ paint
     def paintEvent(self, event):
@@ -301,6 +303,20 @@ class ExcerptCanvas(QWidget):
         if et._active_doc is not None and et._preview_pixmap is not None:
             et._render_page()
 
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self._et._zoom_in()
+            elif delta < 0:
+                self._et._zoom_out()
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+    def keyPressEvent(self, event):
+        self._et.keyPressEvent(event)
+
 
 # ===========================================================================
 # ExcerptTool – main widget
@@ -336,6 +352,8 @@ class ExcerptTool(QWidget):
         self._render_mat          = fitz.Matrix(1, 1)
         self._inv_mat             = fitz.Matrix(1, 1)
         self._preview_pixmap: QPixmap | None = None
+        self._zoom_factor: float = 1.0
+        self._zoom_lbl = None
 
         # Thumb strip state
         self._thumb_pixmaps: list  = []   # list of QPixmap | None
@@ -433,11 +451,10 @@ class ExcerptTool(QWidget):
         )
         icon_bg_lay = QVBoxLayout(icon_bg)
         icon_bg_lay.setContentsMargins(0, 0, 0, 0)
-        icon_lbl = QLabel("📄")
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(svg_pixmap("file-text", BLUE_DARK, 20))
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setStyleSheet(
-            f"color: {BLUE_DARK}; font: 18px; background: transparent; border: none;"
-        )
+        icon_lbl.setStyleSheet("background: transparent; border: none;")
         icon_bg_lay.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignCenter)
         file_card_lay.addWidget(icon_bg)
 
@@ -648,15 +665,16 @@ class ExcerptTool(QWidget):
         nav_lay.setSpacing(6)
         nav_lay.addStretch()
 
-        self.btn_prev = QPushButton("←")
+        self.btn_prev = QPushButton()
+        self.btn_prev.setIcon(QIcon(svg_pixmap("chevron-left", G700, 14)))
+        self.btn_prev.setIconSize(QSize(14, 14))
         self.btn_prev.setFixedSize(32, 32)
         self.btn_prev.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_prev.setEnabled(False)
         self.btn_prev.setStyleSheet(
-            f"QPushButton {{ background: {G100}; color: {G700}; "
-            f"font: 14px 'Segoe UI'; border: 1px solid {G200}; border-radius: 6px; }}"
+            f"QPushButton {{ background: {G100}; border: 1px solid {G200}; border-radius: 6px; }}"
             f"QPushButton:hover:enabled {{ background: {G200}; }}"
-            f"QPushButton:disabled {{ color: {G300}; background: {G100}; }}"
+            f"QPushButton:disabled {{ background: {G100}; }}"
         )
         self.btn_prev.clicked.connect(self._prev_page)
         nav_lay.addWidget(self.btn_prev)
@@ -677,15 +695,16 @@ class ExcerptTool(QWidget):
         )
         nav_lay.addWidget(self.total_lbl)
 
-        self.btn_next = QPushButton("→")
+        self.btn_next = QPushButton()
+        self.btn_next.setIcon(QIcon(svg_pixmap("chevron-right", G700, 14)))
+        self.btn_next.setIconSize(QSize(14, 14))
         self.btn_next.setFixedSize(32, 32)
         self.btn_next.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.btn_next.setEnabled(False)
         self.btn_next.setStyleSheet(
-            f"QPushButton {{ background: {G100}; color: {G700}; "
-            f"font: 14px 'Segoe UI'; border: 1px solid {G200}; border-radius: 6px; }}"
+            f"QPushButton {{ background: {G100}; border: 1px solid {G200}; border-radius: 6px; }}"
             f"QPushButton:hover:enabled {{ background: {G200}; }}"
-            f"QPushButton:disabled {{ color: {G300}; background: {G100}; }}"
+            f"QPushButton:disabled {{ background: {G100}; }}"
         )
         self.btn_next.clicked.connect(self._next_page)
         nav_lay.addWidget(self.btn_next)
@@ -693,63 +712,6 @@ class ExcerptTool(QWidget):
         nav_lay.addStretch()
         lay.addWidget(nav)
 
-        # Floating toolbar overlay (pill-shaped, positioned via timer)
-        self._toolbar_overlay = QFrame(right)
-        self._toolbar_overlay.setStyleSheet(
-            f"QFrame {{ background: {WHITE}; border: 1px solid {G200}; "
-            f"border-radius: 24px; }}"
-        )
-        toolbar_lay = QHBoxLayout(self._toolbar_overlay)
-        toolbar_lay.setContentsMargins(8, 4, 8, 4)
-        toolbar_lay.setSpacing(2)
-
-        def _make_toolbar_btn(icon: str, active: bool = False) -> QPushButton:
-            b = QPushButton(icon)
-            b.setFixedSize(40, 40)
-            if active:
-                b.setStyleSheet(
-                    f"QPushButton {{ background: {BLUE_MED}; color: {BLUE_DARK}; "
-                    f"font: 16px; border: none; border-radius: 20px; }}"
-                    f"QPushButton:hover {{ background: {BLUE_MED}; }}"
-                )
-            else:
-                b.setStyleSheet(
-                    f"QPushButton {{ background: transparent; color: {G500}; "
-                    f"font: 16px; border: none; border-radius: 20px; }}"
-                    f"QPushButton:hover {{ background: {G100}; }}"
-                )
-            return b
-
-        toolbar_lay.addWidget(_make_toolbar_btn("✥", active=True))
-        toolbar_lay.addWidget(_make_toolbar_btn("🔍"))
-        toolbar_lay.addWidget(_make_toolbar_btn("⊖"))
-
-        div = QFrame()
-        div.setFixedSize(1, 20)
-        div.setStyleSheet(f"background: {G200}; border: none;")
-        toolbar_lay.addWidget(div)
-
-        toolbar_lay.addWidget(_make_toolbar_btn("✋"))
-
-        self._toolbar_overlay.adjustSize()
-        self._toolbar_overlay.raise_()
-
-        # Position it after layout is established
-        QTimer.singleShot(100, self._reposition_toolbar)
-
-    def _reposition_toolbar(self):
-        if not hasattr(self, '_toolbar_overlay') or self._toolbar_overlay is None:
-            return
-        if not hasattr(self, '_right_frame') or self._right_frame is None:
-            return
-        tw = self._toolbar_overlay.width()
-        if tw == 0:
-            self._toolbar_overlay.adjustSize()
-            tw = self._toolbar_overlay.width()
-        pw = self._right_frame.width()
-        x = (pw - tw) // 2
-        self._toolbar_overlay.move(x, 24)
-        self._toolbar_overlay.raise_()
 
     # --------------------------------------------------------------------------
     # Bottom thumbnail strip
@@ -757,7 +719,7 @@ class ExcerptTool(QWidget):
 
     def _build_thumb_strip(self, root_lay: QVBoxLayout):
         strip_container = QWidget()
-        strip_container.setFixedHeight(176)
+        strip_container.setFixedHeight(200)
         strip_container.setStyleSheet(
             f"background: #F8FAFC; border-top: 1px solid {G200};"
         )
@@ -807,7 +769,7 @@ class ExcerptTool(QWidget):
         # Thumbnail scroll area
         self._thumb_sa = QScrollArea()
         self._thumb_sa.setFixedHeight(160)
-        self._thumb_sa.setWidgetResizable(False)
+        self._thumb_sa.setWidgetResizable(True)
         self._thumb_sa.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._thumb_sa.setHorizontalScrollBarPolicy(
@@ -1054,7 +1016,7 @@ class ExcerptTool(QWidget):
 
         page  = doc[self._current_page]
         pw    = page.rect.width
-        scale = max((cw - 40) / pw, 0.05)
+        scale = max((cw - 40) / pw, 0.05) * self._zoom_factor
 
         fitz_mod = _require_fitz(location="excerpt_tool.py:_render_page", runId="pre-fix")
         _agent_log(
@@ -1080,6 +1042,32 @@ class ExcerptTool(QWidget):
 
         self._canvas.setFixedSize(cw, max(ih + 60, ch))
         self._canvas.update()
+        if self._zoom_lbl is not None:
+            self._zoom_lbl.setText(f"{int(self._zoom_factor * 100)}%")
+
+    def _zoom_in(self):
+        self._zoom_factor = min(self._zoom_factor * 1.25, 5.0)
+        self._render_page()
+
+    def _zoom_out(self):
+        self._zoom_factor = max(self._zoom_factor / 1.25, 0.1)
+        self._render_page()
+
+    def keyPressEvent(self, event):
+        mod = event.modifiers()
+        key = event.key()
+        if mod & Qt.KeyboardModifier.ControlModifier:
+            if key in (Qt.Key.Key_Plus, Qt.Key.Key_Equal):
+                self._zoom_in()
+                return
+            if key == Qt.Key.Key_Minus:
+                self._zoom_out()
+                return
+            if key == Qt.Key.Key_0:
+                self._zoom_factor = 1.0
+                self._render_page()
+                return
+        super().keyPressEvent(event)
 
     def _prev_page(self):
         if self._current_page > 0:
@@ -1181,9 +1169,8 @@ class ExcerptTool(QWidget):
             self._thumb_frames.append(frame)
             self._thumb_inner_lay.insertWidget(i, frame)
 
-        # Update inner widget size
-        total_w = total * (ph_w + 8 + 10) + 28 + 28
-        self._thumb_inner.setFixedWidth(max(total_w, self._thumb_sa.width()))
+        # Let widgetResizable handle sizing; just ensure the inner widget updates
+        self._thumb_inner.updateGeometry()
 
         # Kick off lazy rendering
         self._thumb_timer = QTimer(self)
@@ -1436,7 +1423,8 @@ class ExcerptTool(QWidget):
             thumb_lbl.setStyleSheet("border: none; background: transparent;")
             thumb_container_lay.addWidget(thumb_lbl, 0, Qt.AlignmentFlag.AlignCenter)
         else:
-            ph = QLabel("📄")
+            ph = QLabel()
+            ph.setPixmap(svg_pixmap("file-text", "#9CA3AF", 28))
             ph.setAlignment(Qt.AlignmentFlag.AlignCenter)
             ph.setStyleSheet(
                 f"color: {G400}; font: 20px; background: transparent; border: none;"

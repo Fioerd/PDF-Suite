@@ -11,11 +11,12 @@ from PySide6.QtWidgets import (
     QFileDialog, QMessageBox, QProgressBar, QSizePolicy,
     QApplication, QComboBox,
 )
-from PySide6.QtCore import Qt, QEvent, QObject
+from PySide6.QtCore import Qt, QEvent, QObject, QSize
 from PySide6.QtGui import (
     QPainter, QColor, QPixmap, QImage, QPen, QPainterPath,
-    QFont, QCursor, QKeySequence, QShortcut,
+    QFont, QCursor, QKeySequence, QShortcut, QIcon,
 )
+from icons import svg_pixmap, svg_icon
 
 try:
     import fitz
@@ -104,6 +105,7 @@ class _PreviewCanvas(QWidget):
                        "Load a PDF to see\npage preview here")
             return
         p.drawPixmap(int(st._img_l), int(st._img_t), st._preview_pixmap)
+        st._paint_search_highlights(p)
         st._paint_cut(p)
 
     def mousePressEvent(self, event):
@@ -183,6 +185,9 @@ class SplitTool(QWidget):
         self._preview_pixmap: QPixmap | None = None
         self._thumb_pixmaps: list[QPixmap]   = []
         self._thumb_frames: list[tuple]      = []  # (frame, img_lbl)
+        self._render_scale: float            = 1.0
+        self._search_matches: list           = []  # [(page_idx, fitz.Rect), ...]
+        self._search_current: int            = -1
 
         self._build_ui()
         self._setup_shortcuts()
@@ -230,13 +235,11 @@ class SplitTool(QWidget):
         title_row.setSpacing(12)
         title_row.setContentsMargins(0, 0, 0, 0)
 
-        icon_box = QLabel("✂")
+        icon_box = QLabel()
         icon_box.setFixedSize(40, 40)
+        icon_box.setPixmap(svg_pixmap("scissors", "#3B82F6", 22))
         icon_box.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_box.setStyleSheet(
-            "background: #DBEAFE; border-radius: 8px;"
-            " color: #3B82F6; font: bold 18px 'Segoe UI';"
-        )
+        icon_box.setStyleSheet("background: #DBEAFE; border-radius: 8px;")
         title_row.addWidget(icon_box)
 
         title_lbl = QLabel("Split PDF")
@@ -271,8 +274,9 @@ class SplitTool(QWidget):
         dz_lay.setContentsMargins(10, 0, 10, 0)
         dz_lay.setSpacing(8)
 
-        dz_icon = QLabel("📄")
-        dz_icon.setStyleSheet("border: none; background: transparent; font: 16px;")
+        dz_icon = QLabel()
+        dz_icon.setPixmap(svg_pixmap("file-text", "#6B7280", 20))
+        dz_icon.setStyleSheet("border: none; background: transparent;")
         dz_lay.addWidget(dz_icon)
 
         self.file_entry = QLineEdit()
@@ -339,6 +343,10 @@ class SplitTool(QWidget):
         left_lay.addWidget(sec_ranges)
         left_lay.addSpacing(8)
 
+        # ranges text field + clear button
+        ranges_row = QHBoxLayout()
+        ranges_row.setSpacing(6)
+
         self.ranges_edit = QLineEdit()
         self.ranges_edit.setFixedHeight(43)
         self.ranges_edit.setPlaceholderText("e.g. 1-4, 7, 10-12")
@@ -350,9 +358,94 @@ class SplitTool(QWidget):
             }}
             QLineEdit:focus {{ border-color: {BLUE}; }}
         """)
-        left_lay.addWidget(self.ranges_edit)
+        ranges_row.addWidget(self.ranges_edit, 1)
 
-        ranges_hint = QLabel("Separate ranges with commas.")
+        clear_ranges_btn = QPushButton("✕")
+        clear_ranges_btn.setFixedSize(43, 43)
+        clear_ranges_btn.setToolTip("Clear all ranges")
+        clear_ranges_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {WHITE}; color: {G500};
+                border: 1px solid {G300}; border-radius: 8px;
+                font: bold 14px 'Segoe UI';
+            }}
+            QPushButton:hover {{ background: #FEE2E2; color: {RED}; border-color: {RED}; }}
+        """)
+        clear_ranges_btn.clicked.connect(lambda: self.ranges_edit.clear())
+        ranges_row.addWidget(clear_ranges_btn)
+
+        left_lay.addLayout(ranges_row)
+        left_lay.addSpacing(8)
+
+        # ── Quick-add row ──────────────────────────────────────────────
+        quick_row = QHBoxLayout()
+        quick_row.setSpacing(6)
+
+        _field_style = f"""
+            QLineEdit {{
+                background: {WHITE}; color: {G900};
+                border: 1px solid {G300}; border-radius: 8px;
+                font: 13px 'Segoe UI'; padding: 0 8px;
+            }}
+            QLineEdit:focus {{ border-color: {BLUE}; }}
+        """
+
+        from_lbl = QLabel("From")
+        from_lbl.setStyleSheet(
+            f"color: {G500}; font: 12px 'Segoe UI';"
+            " background: transparent; border: none;"
+        )
+        quick_row.addWidget(from_lbl)
+
+        self._quick_from = QLineEdit("1")
+        self._quick_from.setFixedSize(56, 36)
+        self._quick_from.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._quick_from.setStyleSheet(_field_style)
+        quick_row.addWidget(self._quick_from)
+
+        to_lbl = QLabel("to")
+        to_lbl.setStyleSheet(
+            f"color: {G500}; font: 12px 'Segoe UI';"
+            " background: transparent; border: none;"
+        )
+        quick_row.addWidget(to_lbl)
+
+        self._quick_to = QLineEdit("1")
+        self._quick_to.setFixedSize(56, 36)
+        self._quick_to.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._quick_to.setStyleSheet(_field_style)
+        quick_row.addWidget(self._quick_to)
+
+        add_range_btn = QPushButton("+ Add Range")
+        add_range_btn.setFixedHeight(36)
+        add_range_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {BLUE}; color: {WHITE};
+                border: none; border-radius: 8px;
+                font: bold 12px 'Segoe UI'; padding: 0 12px;
+            }}
+            QPushButton:hover {{ background: {BLUE_HOVER}; }}
+        """)
+        add_range_btn.clicked.connect(self._quick_add_range)
+        quick_row.addWidget(add_range_btn)
+
+        cur_page_btn = QPushButton("Current")
+        cur_page_btn.setFixedHeight(36)
+        cur_page_btn.setToolTip("Set range to the currently previewed page")
+        cur_page_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {WHITE}; color: {G700};
+                border: 1px solid {G300}; border-radius: 8px;
+                font: 12px 'Segoe UI'; padding: 0 10px;
+            }}
+            QPushButton:hover {{ background: {G100}; }}
+        """)
+        cur_page_btn.clicked.connect(self._set_quick_to_current)
+        quick_row.addWidget(cur_page_btn)
+
+        left_lay.addLayout(quick_row)
+
+        ranges_hint = QLabel("Separate ranges with commas. Use From/to to quickly add a range.")
         ranges_hint.setStyleSheet(
             f"color: {G400}; font: italic 11px 'Segoe UI';"
             " background: transparent; border: none;"
@@ -506,14 +599,122 @@ class SplitTool(QWidget):
         divider.setStyleSheet(f"background: {G200}; border: none;")
         top_bar_lay.addWidget(divider)
 
-        self.page_lbl = QLabel("Page – of –")
+        _nav_btn_style = f"""
+            QPushButton {{
+                background: transparent; color: {G700};
+                border: 1px solid {G300}; border-radius: 6px;
+                font: bold 14px 'Segoe UI';
+            }}
+            QPushButton:hover:enabled {{ background: {G100}; }}
+            QPushButton:disabled {{ color: {G300}; border-color: {G200}; }}
+        """
+
+        self._nav_prev = QPushButton("‹")
+        self._nav_prev.setFixedSize(28, 28)
+        self._nav_prev.setStyleSheet(_nav_btn_style)
+        self._nav_prev.setEnabled(False)
+        self._nav_prev.clicked.connect(self._prev)
+        top_bar_lay.addWidget(self._nav_prev)
+
+        self.page_entry = QLineEdit("–")
+        self.page_entry.setFixedSize(44, 28)
+        self.page_entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.page_entry.setStyleSheet(f"""
+            QLineEdit {{
+                background: {WHITE}; color: {G900};
+                border: 1px solid {G300}; border-radius: 6px;
+                font: 13px 'Segoe UI';
+            }}
+            QLineEdit:focus {{ border-color: {BLUE}; }}
+        """)
+        self.page_entry.returnPressed.connect(self._goto_page)
+        top_bar_lay.addWidget(self.page_entry)
+
+        self.page_lbl = QLabel("/ –")
         self.page_lbl.setStyleSheet(
-            f"color: {G500}; font: 14px 'Segoe UI';"
+            f"color: {G500}; font: 13px 'Segoe UI';"
             " background: transparent; border: none;"
         )
         top_bar_lay.addWidget(self.page_lbl)
 
+        self._nav_next = QPushButton("›")
+        self._nav_next.setFixedSize(28, 28)
+        self._nav_next.setStyleSheet(_nav_btn_style)
+        self._nav_next.setEnabled(False)
+        self._nav_next.clicked.connect(self._next)
+        top_bar_lay.addWidget(self._nav_next)
+
         right_lay.addWidget(top_bar)
+
+        # Search bar (hidden by default, shown on Ctrl+F)
+        self._search_bar = QFrame()
+        self._search_bar.setFixedHeight(44)
+        self._search_bar.setStyleSheet(
+            f"QFrame {{ background: {WHITE}; border-bottom: 1px solid {G200}; }}"
+        )
+        sb_lay = QHBoxLayout(self._search_bar)
+        sb_lay.setContentsMargins(12, 0, 12, 0)
+        sb_lay.setSpacing(6)
+
+        _srch_icon = QLabel()
+        _srch_icon.setPixmap(svg_pixmap("search", G500, 16))
+        _srch_icon.setStyleSheet("background: transparent; border: none;")
+        sb_lay.addWidget(_srch_icon)
+
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("Search in PDF…")
+        self._search_input.setFixedHeight(30)
+        self._search_input.setStyleSheet(f"""
+            QLineEdit {{
+                background: {WHITE}; color: {G900};
+                border: 1px solid {G300}; border-radius: 6px;
+                font: 13px 'Segoe UI'; padding: 0 10px;
+            }}
+            QLineEdit:focus {{ border-color: {BLUE}; }}
+        """)
+        self._search_input.returnPressed.connect(self._search_next_match)
+        self._search_input.textChanged.connect(self._search_do)
+        sb_lay.addWidget(self._search_input, 1)
+
+        self._search_count_lbl = QLabel("")
+        self._search_count_lbl.setFixedWidth(70)
+        self._search_count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._search_count_lbl.setStyleSheet(
+            f"color: {G500}; font: 12px 'Segoe UI'; background: transparent; border: none;"
+        )
+        sb_lay.addWidget(self._search_count_lbl)
+
+        _sb_btn = f"""
+            QPushButton {{
+                background: transparent; color: {G700};
+                border: 1px solid {G300}; border-radius: 6px;
+                font: bold 14px 'Segoe UI';
+            }}
+            QPushButton:hover {{ background: {G100}; }}
+        """
+        sb_prev = QPushButton("‹")
+        sb_prev.setFixedSize(28, 28)
+        sb_prev.setStyleSheet(_sb_btn)
+        sb_prev.setToolTip("Previous match")
+        sb_prev.clicked.connect(self._search_prev_match)
+        sb_lay.addWidget(sb_prev)
+
+        sb_next = QPushButton("›")
+        sb_next.setFixedSize(28, 28)
+        sb_next.setStyleSheet(_sb_btn)
+        sb_next.setToolTip("Next match")
+        sb_next.clicked.connect(self._search_next_match)
+        sb_lay.addWidget(sb_next)
+
+        sb_close = QPushButton("✕")
+        sb_close.setFixedSize(28, 28)
+        sb_close.setStyleSheet(_sb_btn)
+        sb_close.setToolTip("Close search")
+        sb_close.clicked.connect(self._close_search)
+        sb_lay.addWidget(sb_close)
+
+        self._search_bar.hide()
+        right_lay.addWidget(self._search_bar)
 
         # Preview area (flex-1)
         preview_area = QWidget()
@@ -657,8 +858,10 @@ class SplitTool(QWidget):
         """
 
     def _setup_shortcuts(self):
-        QShortcut(QKeySequence("Left"),  self).activated.connect(self._prev)
-        QShortcut(QKeySequence("Right"), self).activated.connect(self._next)
+        QShortcut(QKeySequence("Left"),   self).activated.connect(self._prev)
+        QShortcut(QKeySequence("Right"),  self).activated.connect(self._next)
+        QShortcut(QKeySequence("Ctrl+F"), self).activated.connect(self._open_search)
+        QShortcut(QKeySequence("Escape"), self).activated.connect(self._close_search)
 
     # ==================================================================
     # FILE LOADING
@@ -699,9 +902,12 @@ class SplitTool(QWidget):
 
             self.from_entry.setText("1")
             self.to_entry.setText(str(self.total_pages))
+            self._quick_from.setText("1")
+            self._quick_to.setText(str(self.total_pages))
 
             self._pages_count_lbl.setText(f"{self.total_pages} Pages")
-            self.page_lbl.setText(f"Page 1 of {self.total_pages}")
+            self.page_lbl.setText(f"/ {self.total_pages}")
+            self.page_entry.setText("1")
             self._zoom_lbl.setText("100%")
             self.status_lbl.setText(f"{self.total_pages} pages loaded.")
             self._rebuild_cards()
@@ -732,6 +938,7 @@ class SplitTool(QWidget):
         rw = max(rw, 100)
 
         s = rw / page.rect.width
+        self._render_scale = s
         pix = page.get_pixmap(matrix=fitz.Matrix(s, s), alpha=False)
         self._preview_pixmap = _fitz_pix_to_qpixmap(pix)
         iw, ih = self._preview_pixmap.width(), self._preview_pixmap.height()
@@ -745,9 +952,12 @@ class SplitTool(QWidget):
         self._cut_ratio = self.page_cuts.get(idx, 1.0)
         self._preview_canvas.update()
 
-        self.page_lbl.setText(f"Page {idx + 1} of {self.total_pages}")
+        self.page_lbl.setText(f"/ {self.total_pages}")
+        self.page_entry.setText(str(idx + 1))
         self.btn_prev.setEnabled(idx > 0)
         self.btn_next.setEnabled(idx < self.total_pages - 1)
+        self._nav_prev.setEnabled(idx > 0)
+        self._nav_next.setEnabled(idx < self.total_pages - 1)
         self._hl_thumb(idx)
 
     def _prev(self):
@@ -757,6 +967,95 @@ class SplitTool(QWidget):
     def _next(self):
         if self.current_page < self.total_pages - 1:
             self._show(self.current_page + 1)
+
+    def _goto_page(self):
+        if self.total_pages == 0:
+            return
+        try:
+            n = int(self.page_entry.text().strip())
+        except ValueError:
+            self.page_entry.setText(str(self.current_page + 1))
+            return
+        self._show(max(0, min(n - 1, self.total_pages - 1)))
+
+    # ==================================================================
+    # SEARCH
+    # ==================================================================
+
+    def _open_search(self):
+        self._search_bar.show()
+        self._search_input.setFocus()
+        self._search_input.selectAll()
+
+    def _close_search(self):
+        self._search_bar.hide()
+        self._search_matches.clear()
+        self._search_current = -1
+        self._search_count_lbl.setText("")
+        self._preview_canvas.update()
+
+    def _search_do(self):
+        query = self._search_input.text().strip()
+        self._search_matches.clear()
+        self._search_current = -1
+        if not query or not self.doc:
+            self._search_count_lbl.setText("")
+            self._preview_canvas.update()
+            return
+        for pg_idx in range(self.total_pages):
+            rects = self.doc[pg_idx].search_for(query)
+            for r in rects:
+                self._search_matches.append((pg_idx, r))
+        total = len(self._search_matches)
+        if total == 0:
+            self._search_count_lbl.setText("No results")
+            self._preview_canvas.update()
+            return
+        self._search_current = 0
+        self._search_goto(0)
+
+    def _search_next_match(self):
+        if not self._search_matches:
+            self._search_do()
+            return
+        self._search_current = (self._search_current + 1) % len(self._search_matches)
+        self._search_goto(self._search_current)
+
+    def _search_prev_match(self):
+        if not self._search_matches:
+            return
+        self._search_current = (self._search_current - 1) % len(self._search_matches)
+        self._search_goto(self._search_current)
+
+    def _search_goto(self, idx: int):
+        total = len(self._search_matches)
+        self._search_count_lbl.setText(f"{idx + 1} / {total}")
+        page_idx, _ = self._search_matches[idx]
+        if page_idx != self.current_page:
+            self._show(page_idx)
+        else:
+            self._preview_canvas.update()
+
+    def _paint_search_highlights(self, p: QPainter):
+        if not self._search_matches or self._img_b <= self._img_t:
+            return
+        for i, (pg_idx, r) in enumerate(self._search_matches):
+            if pg_idx != self.current_page:
+                continue
+            x = self._img_l + r.x0 * self._render_scale
+            y = self._img_t + r.y0 * self._render_scale
+            w = (r.x1 - r.x0) * self._render_scale
+            h = (r.y1 - r.y0) * self._render_scale
+            if i == self._search_current:
+                col = QColor("#FF8C00")
+                col.setAlpha(180)
+                p.fillRect(int(x), int(y), int(w), int(h), col)
+                p.setPen(QPen(QColor("#E65C00"), 2))
+                p.drawRect(int(x), int(y), int(w), int(h))
+            else:
+                col = QColor("#FFD700")
+                col.setAlpha(130)
+                p.fillRect(int(x), int(y), int(w), int(h), col)
 
     # ==================================================================
     # CUT LINE
@@ -982,12 +1281,14 @@ class SplitTool(QWidget):
                 " background: transparent; border: none;")
             card_lay.addWidget(lbl, 1)
 
-            del_btn = QPushButton("🗑")
+            del_btn = QPushButton()
+            del_btn.setIcon(QIcon(svg_pixmap("trash-2", G400, 16)))
+            del_btn.setIconSize(QSize(16, 16))
             del_btn.setFixedSize(34, 34)
             del_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: transparent; color: {G400};
-                    border: none; border-radius: 6px; font: 16px;
+                    background: transparent;
+                    border: none; border-radius: 6px;
                 }}
                 QPushButton:hover {{ background: {G100}; }}
             """)
@@ -995,6 +1296,25 @@ class SplitTool(QWidget):
             card_lay.addWidget(del_btn)
 
             self._ranges_layout.insertWidget(i, card)
+
+    def _quick_add_range(self):
+        try:
+            a = int(self._quick_from.text().strip())
+            b = int(self._quick_to.text().strip())
+        except ValueError:
+            return
+        if a <= 0 or b <= 0 or a > b:
+            return
+        token = str(a) if a == b else f"{a}-{b}"
+        current = self.ranges_edit.text().strip()
+        self.ranges_edit.setText(f"{current}, {token}" if current else token)
+        # Old To becomes new From
+        self._quick_from.setText(str(b))
+
+    def _set_quick_to_current(self):
+        if self.total_pages == 0:
+            return
+        self._quick_to.setText(str(self.current_page + 1))
 
     def _page_to_bis(self):
         if self.total_pages == 0:
@@ -1046,72 +1366,63 @@ class SplitTool(QWidget):
         finally:
             self.split_btn.setEnabled(True)
 
-    def _add_page(self, writer, page, crop="full", ratio=0.5):
-        if RectangleObject is None:
-            QMessageBox.critical(
-                self,
-                "Missing dependency",
-                "pypdf is not installed. Splitting is unavailable.",
-            )
-            return
-        writer.add_page(page)
-        if crop == "full":
-            return
-        a = writer.pages[-1]
-        mb = a.mediabox
-        pt, pb = float(mb.top), float(mb.bottom)
-        pl, pr = float(mb.left), float(mb.right)
-        cy = pt - ratio * (pt - pb)
-        if crop == "top":
-            a.cropbox = RectangleObject((pl, cy, pr, pt))
-        elif crop == "bottom":
-            a.cropbox = RectangleObject((pl, pb, pr, cy))
-
     def _do_split(self):
-        if PdfReader is None or PdfWriter is None:
-            QMessageBox.critical(
-                self,
-                "Missing dependency",
-                "pypdf is not installed. Splitting is unavailable.",
-            )
+        if fitz is None:
+            QMessageBox.critical(self, "Missing dependency",
+                                 "PyMuPDF (fitz) is not installed.")
             return
 
-        reader = PdfReader(self.pdf_path)
+        A4_W, A4_H = 595.28, 841.89
+        src = fitz.open(self.pdf_path)
         base = Path(self.pdf_path).stem
         n = len(self.ranges)
         self.progress.setValue(0)
 
         for i, (s, e) in enumerate(self.ranges):
-            writer = PdfWriter()
+            out = fitz.open()
             for pn in range(s - 1, e):
-                pg = reader.pages[pn]
+                src_page = src[pn]
+                new_page = out.new_page(width=A4_W, height=A4_H)
+                sr = src_page.rect
+                scale = A4_W / sr.width if sr.width > 0 else 1.0
+
                 if pn in self.page_cuts and s != e:
                     cr = self.page_cuts[pn]
+                    cut_y = cr * sr.height          # fitz y from top
                     first, last = pn == s - 1, pn == e - 1
+
                     if first and last:
-                        self._add_page(writer, pg)
+                        new_page.show_pdf_page(new_page.rect, src, pn)
                     elif last:
-                        self._add_page(writer, pg, "top", cr)
+                        # Top portion (above cut line) → placed at top of A4
+                        clip = fitz.Rect(sr.x0, sr.y0, sr.x1, sr.y0 + cut_y)
+                        dest_h = min(cut_y * scale, A4_H)
+                        new_page.show_pdf_page(
+                            fitz.Rect(0, 0, A4_W, dest_h), src, pn, clip=clip)
                     elif first:
-                        self._add_page(writer, pg, "bottom", cr)
+                        # Bottom portion (below cut line) → placed at top of A4
+                        clip = fitz.Rect(sr.x0, sr.y0 + cut_y, sr.x1, sr.y1)
+                        dest_h = min((sr.height - cut_y) * scale, A4_H)
+                        new_page.show_pdf_page(
+                            fitz.Rect(0, 0, A4_W, dest_h), src, pn, clip=clip)
                     else:
-                        self._add_page(writer, pg)
+                        new_page.show_pdf_page(new_page.rect, src, pn)
                 else:
-                    self._add_page(writer, pg)
+                    new_page.show_pdf_page(new_page.rect, src, pn)
 
             tmpl = self.filename_entry.text().strip() or f"{base}_part%d"
             fname = tmpl.replace("%d", str(i + 1))
             if not fname.lower().endswith(".pdf"):
                 fname += ".pdf"
-            out = Path(self.output_dir) / fname
-            with open(out, "wb") as f:
-                writer.write(f)
+            out.save(str(Path(self.output_dir) / fname))
+            out.close()
 
             self.progress.setValue(int((i + 1) / n * 100))
             self.status_lbl.setText(
                 f"Part {i + 1} of {n} created (p. {s}–{e})...")
             QApplication.processEvents()
 
+        src.close()
         self.status_lbl.setText(f"Done! {n} parts created.")
 
     # ==================================================================
