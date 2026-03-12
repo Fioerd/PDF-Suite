@@ -1,4 +1,5 @@
 PySide6>=6.7
 pymupdf>=1.24
+pypdf>=4.0
 Pillow>=10.0
 pdfplumber>=0.11.0

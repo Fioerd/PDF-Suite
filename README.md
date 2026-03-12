@@ -38,9 +38,9 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-**macOS / Linux**
+**macOS / Linux — with Homebrew**
 ```bash
-# 2. Install Python 3.11 if needed (macOS with Homebrew)
+# 2. Install Python 3.11
 brew install python@3.11
 
 # 3. Create a virtual environment with Python 3.11
@@ -48,6 +48,20 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 
 # 4. Install dependencies
+pip install -r requirements.txt
+```
+
+**macOS — without Homebrew**
+
+1. Download and install Python 3.11 from the official website: https://www.python.org/downloads/
+2. Open Terminal and run:
+
+```bash
+# 2. Create a virtual environment with Python 3.11
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
