@@ -27,7 +27,6 @@ Tested on **Windows** and **macOS**. Linux should work but is untested.
 # 1. Clone the repository
 git clone https://github.com/Fioerd/PDFree.git
 cd PDFree
-```
 
 **Windows**
 ```bash
