@@ -26,18 +26,29 @@ Tested on **Windows** and **macOS**. Linux should work but is untested.
 ```bash
 # 1. Clone the repository
 git clone https://github.com/Fioerd/PDFree.git
-cd PDF-Suite
+cd PDFree
+```
 
-# 2. Create and activate a virtual environment (recommended)
+**Windows**
+```bash
+# 2. Create and activate a virtual environment
 python -m venv .venv
-
-# Windows
 .venv\Scripts\activate
 
-# macOS / Linux
+# 3. Install dependencies
+pip install -r requirements.txt
+```
+
+**macOS / Linux**
+```bash
+# 2. Install Python 3.11 if needed (macOS with Homebrew)
+brew install python@3.11
+
+# 3. Create a virtual environment with Python 3.11
+python3.11 -m venv .venv
 source .venv/bin/activate
 
-# 3. Install dependencies
+# 4. Install dependencies
 pip install -r requirements.txt
 ```
 

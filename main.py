@@ -3,6 +3,7 @@
 Run this single file to start the app:
     python main.py
 """
+from __future__ import annotations
 
 import sys
 import os
