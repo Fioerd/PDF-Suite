@@ -7,6 +7,12 @@ from __future__ import annotations
 
 import sys
 import os
+
+
+def resource_path(relative_path: str) -> str:
+    """Return absolute path to a resource — works both in dev and in a PyInstaller .exe."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative_path)
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFrame, QLabel, QPushButton,
     QLineEdit, QScrollArea, QGridLayout, QHBoxLayout, QVBoxLayout,
@@ -502,9 +508,9 @@ class PDFreeApp(QMainWindow):
         self.resize(1420, 880)
         self.setMinimumSize(1100, 700)
         self.setStyleSheet(f"QMainWindow {{ background: {BG}; }}")
-        _logo_path = os.path.join(os.path.dirname(__file__), "LOGO.svg")
+        _logo_path = resource_path("LOGO.svg")
         if not os.path.exists(_logo_path):
-            _logo_path = os.path.join(os.path.dirname(__file__), "LOGO.png")
+            _logo_path = resource_path("LOGO.png")
         if os.path.exists(_logo_path):
             if _logo_path.endswith(".svg"):
                 from PySide6.QtSvg import QSvgRenderer
@@ -785,8 +791,8 @@ class PDFreeApp(QMainWindow):
         lw_lay.setContentsMargins(16, 16, 16, 16)
         lw_lay.setSpacing(0)
 
-        _lp_svg = os.path.join(os.path.dirname(__file__), "LOGO.svg")
-        _lp_png = os.path.join(os.path.dirname(__file__), "LOGO.png")
+        _lp_svg = resource_path("LOGO.svg")
+        _lp_png = resource_path("LOGO.png")
         if os.path.exists(_lp_svg):
             from PySide6.QtSvgWidgets import QSvgWidget
             logo_badge = QSvgWidget(_lp_svg)
